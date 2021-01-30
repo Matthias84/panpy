@@ -30,35 +30,45 @@ Supported commands are
 	check     Check schedule validity for work rules 
 ''')
 		parser.add_argument('command', help='Subcommand to run')
-		args = parser.parse_args(sys.argv[1:2])
+		parser.add_argument('--panconf', help='absolute filepath to pan.xml configfile', required=False)
+		
+		args = parser.parse_args()
 		if not hasattr(self, args.command):
 			print('Unrecognized command')
 			parser.print_help()
 			exit(1)
-		getattr(self, args.command)()
+		if hasattr(args, 'panconf'):
+			getattr(self, args.command)(confFilename=args.panconf)
+		else:
+			getattr(self, args.command)()
 	
-	def check(self):
-		print('\n\n------Prüfung-----')
-		try:
-			settings = self.__getPanSettings()
-		except FileNotFoundError:
-			print('No pan.xml config file found! Please start PAN application for a first run.')
+	def check(self, confFilename=None):
+		print('\n-----Prüfung-----')
+		settings = self.__getPanSettings(confFilename)
+		if settings is not None:
+			print('{}'.format(settings['fullname']))
 		
 	
-	def __getPanSettings(self, confFilename = Path.home() / 'pan.xml'):
-		confTree = ET.parse(confFilename)
-		properties = confTree.getroot()
-		settings = {}
-		for entry in properties.findall('entry'):
-			key = entry.get('key')
-			if key == 'verzeichnis':
-				settings['schedulepath'] = Path(entry.text) / '\pan'
-			elif key == 'username':
-				settings['fullname'] = entry.text
-			elif key == 'abteilung':
-				settings['department'] = entry.text
-			elif key == 'uid':
-				settings['userlogin'] = entry.text
+	def __getPanSettings(self, confFilename = None):
+		if confFilename is None:
+			confFilename = Path.home() / 'pan.xml'
+		try:
+			confTree = ET.parse(confFilename)
+			properties = confTree.getroot()
+			settings = {}
+			for entry in properties.findall('entry'):
+				key = entry.get('key')
+				if key == 'verzeichnis':
+					settings['schedulepath'] = Path(entry.text) / '\pan'
+				elif key == 'username':
+					settings['fullname'] = entry.text
+				elif key == 'abteilung':
+					settings['department'] = entry.text
+				elif key == 'uid':
+					settings['userlogin'] = entry.text
+		except FileNotFoundError:
+			print('No pan.xml config file found: {0}\nPlease start PAN application for a first run.'.format(confFilename))
+			settings = None
 		return settings
 
 if __name__ == '__main__':
