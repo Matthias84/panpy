@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from enum import Enum
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from printy import printy
 import re
 import sys
 
@@ -23,6 +24,19 @@ Data is stored in a custom XML file format.
 - Error checking on time formats and logic ... asumptions
 
 """
+
+def prRed(skk): print("\033[91m{}\033[00m" .format(skk)) 
+def prGreen(skk): print("\033[92m{}\033[00m" .format(skk)) 
+def prYellow(skk): print("\033[93m{}\033[00m" .format(skk)) 
+def prLightPurple(skk): print("\033[94m{}\033[00m" .format(skk)) 
+def prPurple(skk): print("\033[95m{}\033[00m" .format(skk)) 
+def prCyan(skk): print("\033[96m{}\033[00m" .format(skk)) 
+def prLightGray(skk): print("\033[97m{}\033[00m" .format(skk)) 
+def prBlack(skk): print("\033[98m{}\033[00m" .format(skk)) 
+def prBold(skk): print("\033[01m{}\033[00m" .format(skk)) 
+def prItalic(skk): print("\33[3m{}\033[00m" .format(skk)) 
+
+FMT = '%H:%M'
 
 class DayType(Enum):
 	work = 1
@@ -61,21 +75,28 @@ class WorkDay(object):
 		pausetime = self.getPauseTime()
 		# rule max. worktime day
 		if worktime > timedelta(hours=10):
-			print('{:02d}. max. Arbeitszeit überschritten ({} > 10hrs)'.format(num, worktime))
+			prRed('{:02d}. max. Arbeitszeit überschritten ({} > 10hrs)'.format(num, worktime))
 			fails += 1
 		# rule min. pausetime day
 		if worktime <= timedelta(hours=9):
 			if pausetime < timedelta(minutes=30):
-				print('{:02d}. min. Pausenzeit unterschritten ({} < 30mins)'.format(num, pausetime))
+				prRed('{:02d}. min. Pausenzeit unterschritten ({} < 30mins)'.format(num, pausetime))
 				fails += 1
 		else:
 			if pausetime < timedelta(minutes=45):
-				print('{:02d}. min. Pausenzeit unterschritten ({} < 45mins)'.format(num, pausetime))
+				prRed('{:02d}. min. Pausenzeit unterschritten ({} < 45mins)'.format(num, pausetime))
 				fails += 1
+		# Check servicetimes
+		serviceBegin = datetime.strptime('09:00', FMT)
+		serviceEnd = datetime.strptime('15:00', FMT)
+		amBegin = self.timeblocks[0][0]
+		pmEnd = self.timeblocks[-1][1]
+		if not ((amBegin <= serviceBegin) and (pmEnd >= serviceEnd)):
+			prCyan('! {:02d}. Servicezeit potentiell nicht eingehalten ({} - {})'.format(num, amBegin.strftime(FMT), pmEnd.strftime(FMT)))
 		# rule max. homeoffice
 		hotime = self.getHomeofficeTime()
 		if (hotime > timedelta(hours=8)):
-			print('! {:02d}. max. Heimarbeit überschritten ({} <= 8hrs)'.format(num, worktime))
+			prRed('! {:02d}. max. Heimarbeit überschritten ({} <= 8hrs)'.format(num, worktime))
 			fails += 1
 		return fails
 	
@@ -136,17 +157,13 @@ class WorkMonth(object):
 				worktime_homeoffice += hotime
 				
 		if (worktime_homeoffice > timedelta(days=10)):
-			print('! {:02d}. max. mtl. Heimarbeit überschritten ({} <= 10days)'.format(num, worktime))
+			prRed('! {:02d}. max. mtl. Heimarbeit überschritten ({} <= 10days)'.format(num, worktime))
 			fails += 1
 		print('----------------')
 		if fails == 0:
-			print('Keine Verstöße erkannt')
+			prGreen('Keine Verstöße erkannt')
 		else:
-			print('{0} Verstöße erkannt'.format(fails))
-			
-					
-					
-					
+			prRed('{0} Verstöße erkannt'.format(fails))					
 	
 	def __str__(self):
 		ret = ""
@@ -267,7 +284,6 @@ Supported commands are
 	
 	def _parsePANTimeRange(self,strDayRange):
 		#deconstruct '09:00 - 12:30'
-		FMT = '%H:%M'
 		try:
 			begin, end = strDayRange.split(' - ')
 			begin = datetime.strptime(begin, FMT)
