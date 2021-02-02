@@ -13,4 +13,5 @@ Created by Dr. Schirrow, the original tool is the default solution at the munici
 
 Start the tool like `python3 pan.py`.
 You can set the configuration file, or month file like:
+* `python3 pan.py check --panconf ./pan/mypersonal/pan.xml`
 * `python3 pan.py check --xmlmonth ./pan/pan_R62ad001_1-2021.xml`

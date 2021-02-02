@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from enum import Enum
 import xml.etree.ElementTree as ET
 from pathlib import Path
+import re
 import sys
 
 
@@ -19,6 +20,7 @@ Data is stored in a custom XML file format.
 - pan.py email-lock-import imapserver imapaccount imappassword imapfolder - manual sync with all 
 - pan.py pdf (current, month/year, xmlfilename)- generate PDF with original PAN layout
 - pan.py plot (current, month/year, xmlfilename)
+- Error checking on time formats and logic ... asumptions
 
 """
 
@@ -30,6 +32,7 @@ class DayType(Enum):
 	illness = 5
 	overtime_free = 6
 	business_trip = 7
+	unpaid_free = 8
 	
 	def __str__(self):
 		mapping={'work': 'Arbeitstag',
@@ -38,7 +41,8 @@ class DayType(Enum):
 		'holiday': 'Feiertag', 
 		'illness': 'Krankschreibung', 
 		'overtime_free': 'Überstundenausgleich', 
-		'business_trip': 'Dienstreise'}
+		'business_trip': 'Dienstreise',
+		'unpaid_free': 'Freistellung'}
 		
 		ret = mapping[self.name]
 		return ret
@@ -46,8 +50,9 @@ class DayType(Enum):
 
 class WorkDay(object):
 	
-	def __init__(self, daytype, timeblocks):
+	def __init__(self, daytype, description, timeblocks):
 		self.daytype = daytype
+		self.description = description
 		self.timeblocks=timeblocks
 	
 	def __str__(self):
@@ -59,6 +64,51 @@ class WorkMonth(object):
 	
 	def __init__(self, workdays):
 		self.workdays = workdays
+		
+	def check(self):
+		"""Check rules on worktime month, day and print errors"""
+		worktime_month = timedelta(hours=0)
+		worktime_homeoffice = timedelta(hours=0)
+		for num in self.workdays:
+			day = self.workdays[num]
+			if day.daytype == DayType.work:
+				worktime = timedelta(hours=0)
+				pausetime = timedelta(hours=0)
+				for block in day.timeblocks:
+					worktime += block[1] - block[0]
+				pausetime = day.timeblocks[1][0]-day.timeblocks[0][1]
+				if len(day.timeblocks) > 2:
+					pausetime += day.timeblocks[2][0]-day.timeblocks[1][1]
+				if len(day.timeblocks) == 4:
+					pausetime += day.timeblocks[3][0]-day.timeblocks[2][1]	
+				worktime_month += worktime
+				# rule max. worktime day
+				if worktime > timedelta(hours=10):
+					print('{:02d}. max. Arbeitszeit überschritten ({} > 10hrs)'.format(num, worktime))
+				# rule min. pausetime day
+				if worktime <= timedelta(hours=9):
+					if pausetime < timedelta(minutes=30):
+						print('{:02d}. min. Pausenzeit unterschritten ({} < 30mins)'.format(num, pausetime))
+				else:
+					if pausetime < timedelta(minutes=45):
+						print('{:02d}. min. Pausenzeit unterschritten ({} < 45mins)'.format(num, pausetime))
+				# rule max. homeoffice
+				if day.description:
+					if day.description.lower().find('homeoffice') != -1:
+						# Check if provide a percentage e.g. '0.5 Homeoffice')
+						perc = re.match('\d+\.\d+', day.description)
+						if perc:
+							perc = float(perc.group(0))
+							worktime = worktime * perc
+						if (worktime > timedelta(hours=8)):
+							print('! {:02d}. max. Heimarbeit überschritten ({} <= 8hrs)'.format(num, worktime))
+						worktime_homeoffice += worktime
+		if (worktime_homeoffice > timedelta(days=10)):
+						print('! {:02d}. max. mtl. Heimarbeit überschritten ({} <= 10days)'.format(num, worktime))
+			
+					
+					
+					
 	
 	def __str__(self):
 		ret = ""
@@ -104,7 +154,8 @@ Supported commands are
 			print('{}'.format(monthXMLFilename))
 			xml = self.__openMonthXMLFile(monthXMLFilename)
 			month = self.__getMonth(xml)
-			print(month)
+			#print(month)
+			month.check()
 		
 	
 	def __getPanSettings(self, confFilename = None):
@@ -142,8 +193,13 @@ Supported commands are
 						'Feiertag': DayType.holiday,
 						'Krankheit': DayType.illness,
 						'Überstunden genommen': DayType.overtime_free,
-						'Dienstreise': DayType.business_trip}
+						'Dienstreise': DayType.business_trip,
+						'Freistellung': DayType.unpaid_free}
 		workdays = {}
+		if xml.find('Erweitert').text == 'true':
+			extendedFormat = True
+		else:
+			extendedFormat = False
 		for panday in xml.findall('Tag'):
 			# parse
 			numday = int(panday.find('Datum').text)
@@ -151,8 +207,12 @@ Supported commands are
 			description = panday.find('Bemerkung').text
 			morning = panday.find('Vormittag').text
 			afternoon = panday.find('Nachmittag').text
-			third = panday.find('Dritte').text
-			fourth = panday.find('Vierte').text
+			if extendedFormat:
+				third = panday.find('Dritte').text
+				fourth = panday.find('Vierte').text
+			else:
+				third = None
+				fourth = None
 			# convert
 			daytype = dayTypeMapping[daytype]
 			morning = self. _parsePANTimeRange(morning)
@@ -162,7 +222,7 @@ Supported commands are
 			timeblocks = [morning, afternoon, third, fourth]
 			timeblocks = list(filter(None, timeblocks))
 			# save
-			day = WorkDay(daytype, timeblocks)
+			day = WorkDay(daytype, description, timeblocks)
 			workdays[numday] = day
 		month = WorkMonth(workdays)
 		return month
