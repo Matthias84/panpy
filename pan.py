@@ -15,11 +15,11 @@ Data is stored in a custom XML file format.
 
 
 #TODO:
-- pan.py check (current, month/year, xmlfilename)
-- pan.py show (current, month/year, xmlfilename)
+- pan.py check (current, month/year, xmlfilename, path)
+- pan.py show (current, month/year, xmlfilename, path)
 - pan.py email-lock-import imapserver imapaccount imappassword imapfolder - manual sync with all 
-- pan.py pdf (current, month/year, xmlfilename)- generate PDF with original PAN layout
-- pan.py plot (current, month/year, xmlfilename)
+- pan.py pdf (current, month/year, xmlfilename, path)- generate PDF with original PAN layout
+- pan.py plot (current, month/year, xmlfilename, path)
 - Error checking on time formats and logic ... asumptions
 
 """
@@ -55,6 +55,62 @@ class WorkDay(object):
 		self.description = description
 		self.timeblocks=timeblocks
 	
+	def check(self, num):
+		fails = 0
+		worktime = self.getWorkingTime()
+		pausetime = self.getPauseTime()
+		# rule max. worktime day
+		if worktime > timedelta(hours=10):
+			print('{:02d}. max. Arbeitszeit überschritten ({} > 10hrs)'.format(num, worktime))
+			fails += 1
+		# rule min. pausetime day
+		if worktime <= timedelta(hours=9):
+			if pausetime < timedelta(minutes=30):
+				print('{:02d}. min. Pausenzeit unterschritten ({} < 30mins)'.format(num, pausetime))
+				fails += 1
+		else:
+			if pausetime < timedelta(minutes=45):
+				print('{:02d}. min. Pausenzeit unterschritten ({} < 45mins)'.format(num, pausetime))
+				fails += 1
+		# rule max. homeoffice
+		hotime = self.getHomeofficeTime()
+		if (hotime > timedelta(hours=8)):
+			print('! {:02d}. max. Heimarbeit überschritten ({} <= 8hrs)'.format(num, worktime))
+			fails += 1
+		return fails
+	
+	def getWorkingTime(self):
+		worktime = timedelta(hours=0)
+		for block in self.timeblocks:
+			worktime += block[1] - block[0]
+		return worktime
+
+	def getPauseTime(self):
+		pausetime = timedelta(hours=0)
+		pausetime = self.timeblocks[1][0]-self.timeblocks[0][1]
+		if len(self.timeblocks) > 2:
+			pausetime += self.timeblocks[2][0]-self.timeblocks[1][1]
+		if len(self.timeblocks) == 4:
+			pausetime += self.timeblocks[3][0]-self.timeblocks[2][1]
+		return pausetime
+	
+	def getHomeofficeTime(self):
+		if self.description:
+			if self.description.lower().find('homeoffice') != -1:
+				# Check if provide a percentage e.g. '0.5 Homeoffice')
+				perc = re.match('\d+\.\d+', self.description)
+				if perc:
+					perc = float(perc.group(0))
+					hotime = self.getWorkingTime() * perc
+				else:
+					hotime = self.getWorkingTime()
+				return hotime
+			else:
+				return timedelta(hours=0)
+		else:
+			return timedelta(hours=0)
+		
+	
 	def __str__(self):
 		return "{0} {1}".format(str(self.daytype),str(self.timeblocks))
 		
@@ -72,45 +128,16 @@ class WorkMonth(object):
 		worktime_homeoffice = timedelta(hours=0)
 		for num in self.workdays:
 			day = self.workdays[num]
-			if day.daytype == DayType.work:
-				worktime = timedelta(hours=0)
-				pausetime = timedelta(hours=0)
-				for block in day.timeblocks:
-					worktime += block[1] - block[0]
-				pausetime = day.timeblocks[1][0]-day.timeblocks[0][1]
-				if len(day.timeblocks) > 2:
-					pausetime += day.timeblocks[2][0]-day.timeblocks[1][1]
-				if len(day.timeblocks) == 4:
-					pausetime += day.timeblocks[3][0]-day.timeblocks[2][1]	
+			if day.daytype == DayType.work:	
+				fails += day.check(num)
+				worktime = day.getWorkingTime()
 				worktime_month += worktime
-				# rule max. worktime day
-				if worktime > timedelta(hours=10):
-					print('{:02d}. max. Arbeitszeit überschritten ({} > 10hrs)'.format(num, worktime))
-					fails += 1
-				# rule min. pausetime day
-				if worktime <= timedelta(hours=9):
-					if pausetime < timedelta(minutes=30):
-						print('{:02d}. min. Pausenzeit unterschritten ({} < 30mins)'.format(num, pausetime))
-						fails += 1
-				else:
-					if pausetime < timedelta(minutes=45):
-						print('{:02d}. min. Pausenzeit unterschritten ({} < 45mins)'.format(num, pausetime))
-						fails += 1
-				# rule max. homeoffice
-				if day.description:
-					if day.description.lower().find('homeoffice') != -1:
-						# Check if provide a percentage e.g. '0.5 Homeoffice')
-						perc = re.match('\d+\.\d+', day.description)
-						if perc:
-							perc = float(perc.group(0))
-							worktime = worktime * perc
-						if (worktime > timedelta(hours=8)):
-							print('! {:02d}. max. Heimarbeit überschritten ({} <= 8hrs)'.format(num, worktime))
-							fails += 1
-						worktime_homeoffice += worktime
+				hotime = day.getHomeofficeTime()
+				worktime_homeoffice += hotime
+				
 		if (worktime_homeoffice > timedelta(days=10)):
-						print('! {:02d}. max. mtl. Heimarbeit überschritten ({} <= 10days)'.format(num, worktime))
-						fails += 1
+			print('! {:02d}. max. mtl. Heimarbeit überschritten ({} <= 10days)'.format(num, worktime))
+			fails += 1
 		print('----------------')
 		if fails == 0:
 			print('Keine Verstöße erkannt')
@@ -165,7 +192,6 @@ Supported commands are
 			print('{}'.format(monthXMLFilename))
 			xml = self.__openMonthXMLFile(monthXMLFilename)
 			month = self.__getMonth(xml)
-			#print(month)
 			month.check()
 		
 	
