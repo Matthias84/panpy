@@ -67,6 +67,7 @@ class WorkMonth(object):
 		
 	def check(self):
 		"""Check rules on worktime month, day and print errors"""
+		fails = 0
 		worktime_month = timedelta(hours=0)
 		worktime_homeoffice = timedelta(hours=0)
 		for num in self.workdays:
@@ -85,13 +86,16 @@ class WorkMonth(object):
 				# rule max. worktime day
 				if worktime > timedelta(hours=10):
 					print('{:02d}. max. Arbeitszeit überschritten ({} > 10hrs)'.format(num, worktime))
+					fails += 1
 				# rule min. pausetime day
 				if worktime <= timedelta(hours=9):
 					if pausetime < timedelta(minutes=30):
 						print('{:02d}. min. Pausenzeit unterschritten ({} < 30mins)'.format(num, pausetime))
+						fails += 1
 				else:
 					if pausetime < timedelta(minutes=45):
 						print('{:02d}. min. Pausenzeit unterschritten ({} < 45mins)'.format(num, pausetime))
+						fails += 1
 				# rule max. homeoffice
 				if day.description:
 					if day.description.lower().find('homeoffice') != -1:
@@ -102,9 +106,16 @@ class WorkMonth(object):
 							worktime = worktime * perc
 						if (worktime > timedelta(hours=8)):
 							print('! {:02d}. max. Heimarbeit überschritten ({} <= 8hrs)'.format(num, worktime))
+							fails += 1
 						worktime_homeoffice += worktime
 		if (worktime_homeoffice > timedelta(days=10)):
 						print('! {:02d}. max. mtl. Heimarbeit überschritten ({} <= 10days)'.format(num, worktime))
+						fails += 1
+		print('----------------')
+		if fails == 0:
+			print('Keine Verstöße erkannt')
+		else:
+			print('{0} Verstöße erkannt'.format(fails))
 			
 					
 					
