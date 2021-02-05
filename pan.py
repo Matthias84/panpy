@@ -73,31 +73,32 @@ class WorkDay(object):
 		fails = 0
 		worktime = self.getWorkingTime()
 		pausetime = self.getPauseTime()
-		# rule max. worktime day
-		if worktime > timedelta(hours=10):
-			prRed('{:02d}. max. Arbeitszeit überschritten ({} > 10hrs)'.format(num, worktime))
-			fails += 1
-		# rule min. pausetime day
-		if worktime <= timedelta(hours=9):
-			if pausetime < timedelta(minutes=30):
-				prRed('{:02d}. min. Pausenzeit unterschritten ({} < 30mins)'.format(num, pausetime))
+		if len(self.timeblocks)>0:
+			# rule max. worktime day
+			if worktime > timedelta(hours=10):
+				prRed('{:02d}. max. Arbeitszeit überschritten ({} > 10hrs)'.format(num, worktime))
 				fails += 1
-		else:
-			if pausetime < timedelta(minutes=45):
-				prRed('{:02d}. min. Pausenzeit unterschritten ({} < 45mins)'.format(num, pausetime))
+			# rule min. pausetime day
+			if worktime <= timedelta(hours=9):
+				if pausetime < timedelta(minutes=30):
+					prRed('{:02d}. min. Pausenzeit unterschritten ({} < 30mins)'.format(num, pausetime))
+					fails += 1
+			else:
+				if pausetime < timedelta(minutes=45):
+					prRed('{:02d}. min. Pausenzeit unterschritten ({} < 45mins)'.format(num, pausetime))
+					fails += 1
+			# Check servicetimes
+			serviceBegin = datetime.strptime('09:00', FMT)
+			serviceEnd = datetime.strptime('15:00', FMT)
+			amBegin = self.timeblocks[0][0]
+			pmEnd = self.timeblocks[-1][1]
+			if not ((amBegin <= serviceBegin) and (pmEnd >= serviceEnd)):
+				prCyan('! {:02d}. Servicezeit potentiell nicht eingehalten ({} - {})'.format(num, amBegin.strftime(FMT), pmEnd.strftime(FMT)))
+			# rule max. homeoffice
+			hotime = self.getHomeofficeTime()
+			if (hotime > timedelta(hours=8)):
+				prRed('! {:02d}. max. Heimarbeit überschritten ({} <= 8hrs)'.format(num, worktime))
 				fails += 1
-		# Check servicetimes
-		serviceBegin = datetime.strptime('09:00', FMT)
-		serviceEnd = datetime.strptime('15:00', FMT)
-		amBegin = self.timeblocks[0][0]
-		pmEnd = self.timeblocks[-1][1]
-		if not ((amBegin <= serviceBegin) and (pmEnd >= serviceEnd)):
-			prCyan('! {:02d}. Servicezeit potentiell nicht eingehalten ({} - {})'.format(num, amBegin.strftime(FMT), pmEnd.strftime(FMT)))
-		# rule max. homeoffice
-		hotime = self.getHomeofficeTime()
-		if (hotime > timedelta(hours=8)):
-			prRed('! {:02d}. max. Heimarbeit überschritten ({} <= 8hrs)'.format(num, worktime))
-			fails += 1
 		return fails
 	
 	def getWorkingTime(self):
