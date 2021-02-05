@@ -108,11 +108,12 @@ class WorkDay(object):
 
 	def getPauseTime(self):
 		pausetime = timedelta(hours=0)
-		pausetime = self.timeblocks[1][0]-self.timeblocks[0][1]
-		if len(self.timeblocks) > 2:
-			pausetime += self.timeblocks[2][0]-self.timeblocks[1][1]
-		if len(self.timeblocks) == 4:
-			pausetime += self.timeblocks[3][0]-self.timeblocks[2][1]
+		if len(self.timeblocks) > 0:
+			pausetime = self.timeblocks[1][0]-self.timeblocks[0][1]
+			if len(self.timeblocks) > 2:
+				pausetime += self.timeblocks[2][0]-self.timeblocks[1][1]
+			if len(self.timeblocks) == 4:
+				pausetime += self.timeblocks[3][0]-self.timeblocks[2][1]
 		return pausetime
 	
 	def getHomeofficeTime(self):
@@ -139,7 +140,9 @@ class WorkDay(object):
 
 class WorkMonth(object):
 	
-	def __init__(self, workdays):
+	def __init__(self, year, month,workdays):
+		self.year = year
+		self.monthNum = month
 		self.workdays = workdays
 		
 	def check(self):
@@ -154,8 +157,7 @@ class WorkMonth(object):
 				worktime = day.getWorkingTime()
 				worktime_month += worktime
 				hotime = day.getHomeofficeTime()
-				worktime_homeoffice += hotime
-				
+				worktime_homeoffice += hotime				
 		if (worktime_homeoffice > timedelta(days=10)):
 			prRed('! {:02d}. max. mtl. Heimarbeit überschritten ({} <= 10days)'.format(num, worktime))
 			fails += 1
@@ -163,7 +165,65 @@ class WorkMonth(object):
 		if fails == 0:
 			prGreen('Keine Verstöße erkannt')
 		else:
-			prRed('{0} Verstöße erkannt'.format(fails))					
+			prRed('{0} Verstöße erkannt'.format(fails))
+		
+	def printSummary(self):
+		"""Summary report on screen"""
+		weekWorkHours = None
+		dayDelta = None
+		for num in self.workdays:
+			day = self.workdays[num]
+			if day.daytype == DayType.weekend:
+				if weekWorkHours:
+					hours = weekWorkHours.total_seconds() // 3600
+					mins = weekWorkHours.seconds // 60 % 60
+					printy('------{}hrs-----'.format(hours), 'y')
+					weekWorkHours = None
+					dayDelta = None
+				printy('{:02d}. (WE)'.format(num), 'w')
+			elif day.daytype == DayType.holiday:
+				printy('{:02d}. (Urlaub)'.format(num), 'c')
+				dayDelta = timedelta(hours=8)
+			elif day.daytype == DayType.illness:
+				printy('{:02d}. (Krank)'.format(num), 'c')
+				dayDelta = timedelta(hours=8)
+			elif day.daytype == DayType.overtime_free:
+				printy('{:02d}. (Überstundenausgleich)'.format(num), 'c')
+				dayDelta = timedelta(hours=8)
+			elif day.daytype == DayType.business_trip:
+				printy('{:02d}. (Dienstreise)'.format(num), 'c')
+				dayDelta = timedelta(hours=8)
+			elif day.daytype == DayType.work:
+				dayDelta = day.getWorkingTime()
+				workhours = dayDelta.seconds // 3600
+				workrestminutes = dayDelta.seconds // 60 % 60
+				absday = datetime.strptime('{}.{}.{}'.format(num, self.monthNum, self.year),'%d.%m.%Y')
+				today = datetime.today()
+				pauseDelta = day.getPauseTime()
+				pausehours = pauseDelta.seconds // 3600
+				pauserestminutes = pauseDelta.seconds // 60 % 60
+				if absday == today:
+					printy('{:02d}. {}:{}hrs (Pause: {}:{})'.format(num, workhours, workrestminutes, pausehours, pauserestminutes), 'wH')
+				elif absday > today:
+					# future days
+					if len(day.timeblocks) == 0:
+						printy('{:02d}. ?'.format(num), 'g')
+					else:
+						printy('{:02d}. {}:{}hrs (Pause: {}:{})'.format(num, workhours, workrestminutes, pausehours, pauserestminutes), 'g')
+				else:
+					# past days
+					if dayDelta > timedelta(hours=8):
+						printy('{:02d}. {}:{}hrs (Pause: {}:{})'.format(num, workhours, workrestminutes, pausehours, pauserestminutes), 'n>')
+					elif dayDelta < timedelta(hours=8):
+						printy('{:02d}. {}:{}hrs (Pause: {}:{})'.format(num, workhours, workrestminutes, pausehours, pauserestminutes), 'r>')
+					else:
+						printy('{:02d}. {}:{}hrs (Pause: {}:{})'.format(num, workhours, workrestminutes, pausehours, pauserestminutes), 'n')
+			if weekWorkHours == None:
+				weekWorkHours = dayDelta
+			else:
+				if dayDelta:
+					weekWorkHours = weekWorkHours + dayDelta
+		
 	
 	def __str__(self):
 		ret = ""
@@ -210,6 +270,18 @@ Supported commands are
 			xml = self.__openMonthXMLFile(monthXMLFilename)
 			month = self.__getMonth(xml)
 			month.check()
+	
+	def show(self, confFilename=None, monthXMLFilename=None):
+		print('\n----------')
+		if monthXMLFilename is None:
+			settings = self.__getPanSettings(confFilename)
+			if settings is not None:
+				print('{}'.format(settings['fullname']))
+		else:
+			print('{}'.format(monthXMLFilename))
+			xml = self.__openMonthXMLFile(monthXMLFilename)
+			month = self.__getMonth(xml)
+			month.printSummary()
 		
 	
 	def __getPanSettings(self, confFilename = None):
@@ -250,6 +322,8 @@ Supported commands are
 						'Dienstreise': DayType.business_trip,
 						'Freistellung': DayType.unpaid_free}
 		workdays = {}
+		monthNum = int(xml.find('Monat').text)
+		yearNum = int(xml.find('Jahr').text)
 		if xml.find('Erweitert').text == 'true':
 			extendedFormat = True
 		else:
@@ -278,7 +352,7 @@ Supported commands are
 			# save
 			day = WorkDay(daytype, description, timeblocks)
 			workdays[numday] = day
-		month = WorkMonth(workdays)
+		month = WorkMonth(yearNum,monthNum,workdays)
 		return month
 			
 	
